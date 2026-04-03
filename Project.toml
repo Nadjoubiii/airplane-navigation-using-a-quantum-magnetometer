@@ -1,0 +1,17 @@
+name = "MagNavSim"
+uuid = "c7d9b2d4-4f5a-4b9d-9c3e-1a2b3c4d5e6f"
+authors = ["MagNav User <user@example.com>"]
+version = "0.1.0"
+
+[deps]
+ArchGDAL = "c9ce4bd3-c3d5-55b8-8973-c0e20141b8c3"
+Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
+HTTP = "cd3eb016-35fb-5094-929b-558a96fad6f3"
+JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+
+[compat]
+julia = ">= 1.8"

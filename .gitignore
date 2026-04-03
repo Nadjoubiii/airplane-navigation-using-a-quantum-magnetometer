@@ -1,0 +1,27 @@
+# Julia artifacts
+Manifest.toml
+*.ji
+*.jl.cov
+*.jl.*.cov
+*.jl.mem
+
+# Julia compiled output
+/.julia/
+
+# EMAG2 raster — large binary; download separately per README
+*.tif
+*.tiff
+*.nc
+*.nc4
+
+# Generated outputs
+outputs/
+
+# Editor
+.vscode/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
