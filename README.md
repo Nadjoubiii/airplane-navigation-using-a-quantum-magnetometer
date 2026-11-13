@@ -1,194 +1,212 @@
 # MagNavSim
 
-MagNavSim is a Julia project for simulating magnetic navigation flight data.
-It uses a real-world magnetic anomaly map (EMAG2 raster) and a simple quantum magnetometer model to generate noisy measurements along a flight path.
+[![CI](https://github.com/Nadjoubiii/airplane-navigation-using-a-quantum-magnetometer/actions/workflows/ci.yml/badge.svg)](https://github.com/Nadjoubiii/airplane-navigation-using-a-quantum-magnetometer/actions/workflows/ci.yml)
 
-## Quick Start
+A Julia simulation platform for **magnetic-anomaly navigation with a quantum
+magnetometer**. It flies a virtual aircraft over a real-world magnetic anomaly
+map (NOAA EMAG2) and generates the noisy 3-axis and scalar measurements that a
+quantum magnetometer would record along the way.
 
-Run these from the project folder:
+![Example run: true vs measured anomaly along a flight over the San Francisco Bay area](docs/images/example_flight.png)
 
-```powershell
-Set-Location "C:\Users\user\Desktop\MagNav Project"
+*Default run: true crustal anomaly sampled from EMAG2 (blue), the simulated sensor
+output (orange), and the measurement error (bottom).*
+
+## Why
+
+Magnetic-anomaly navigation estimates position by matching measured field values
+to a map. It needs no GPS and cannot be jammed, but its accuracy is bounded by
+sensor noise. Quantum magnetometers are the most sensitive sensors available, so
+this project asks: *how good does the sensor need to be?* MagNavSim is the
+forward model for that study. Given a map, a track and a sensor specification, it
+produces the measurement stream a navigation filter would consume.
+
+## What it does
+
+1. Loads a single-band anomaly raster (EMAG2 GeoTIFF, or any GDAL-readable grid).
+2. Builds a straight lon/lat flight track.
+3. Samples the map along the track (bilinear interpolation, longitude wrap, nodata handling).
+4. Converts the scalar anomaly into a 3-axis vector along the main-field direction.
+5. Passes it through a quantum-magnetometer model: scale factor, bias, white noise, and low-pass dynamics.
+6. Writes a summary, a CSV of all channels, and a plot.
+
+The exact equations and simplifications are in **[docs/model.md](docs/model.md)**.
+
+## Quick start
+
+**Requirements:** [Julia](https://julialang.org/downloads/) 1.8+ and internet access on the first run (package download).
+
+```sh
+git clone https://github.com/Nadjoubiii/airplane-navigation-using-a-quantum-magnetometer.git
+cd airplane-navigation-using-a-quantum-magnetometer
+
+# 1. Install dependencies (first time only; precompiling Plots/GDAL takes several minutes)
 julia --project=. -e "using Pkg; Pkg.instantiate()"
-julia --project=. src/main.jl
+
+# 2. Run with the built-in synthetic field (no data download needed)
+julia --project=. src/main.jl --synthetic
 ```
 
-After the run, check the summary file:
+Results appear in `outputs/`.
 
-- outputs/last_run_summary.txt
+### Using real data (EMAG2)
 
-## What This Project Does
+1. Download the **EMAG2 v3 upward-continued GeoTIFF** from the
+   [NOAA NCEI EMAG2 page](https://www.ncei.noaa.gov/products/magnetic-anomaly-grid-emag2)
+   (`EMAG2_V3_UpCont_DataTiff.tif`, about 240 MB).
+2. Put it in the project root (it is git-ignored), or pass its location with `--raster`.
+3. Run:
 
-1. Loads a single-band magnetic anomaly raster (GeoTIFF or NetCDF).
-2. Simulates a straight-line trajectory from start to end coordinates.
-3. Samples map anomaly values along the trajectory.
-4. Runs a 3-axis magnetometer measurement model with noise and low-pass dynamics.
-5. Produces scalar and vector magnetic measurement outputs.
-6. Prints and saves a final run summary.
+```sh
+julia --project=. src/main.jl
+julia --project=. src/main.jl --raster path/to/other_grid.tif
+```
 
-## Repository Layout
+If the raster is missing, the runner warns and falls back to the synthetic field.
+
+## Command-line reference
 
 ```text
-MagNav Project/
-  Project.toml
-  Manifest.toml
-  README.md
-  EMAG2_V3_UpCont_DataTiff.tif       # Example default real map file
-  outputs/
-     last_run_summary.txt             # Generated after each main run
-  examples/
-     simple_run.jl
-  src/
-     MagNavSim.jl
-     quantum_sensor.jl
-     emag_downloader.jl
-     main.jl
+julia --project=. src/main.jl [options]
+
+  --raster PATH     Single-band anomaly raster (GeoTIFF/NetCDF).
+                    Default: EMAG2_V3_UpCont_DataTiff.tif in the project root.
+  --synthetic       Skip the raster and use the built-in analytic field.
+  --start LON,LAT   Track start in degrees.   Default: -122.5,37.6
+  --end LON,LAT     Track end in degrees.     Default: -121.5,38.6
+  --steps N         Number of samples.        Default: 300
+  --dt SECONDS      Sample interval.          Default: 1.0
+  --noise NT        Sensor noise per axis.    Default: 3.0
+  --tau SECONDS     Sensor low-pass constant. Default: 0.1
+  --seed N          Seed for reproducible noise.
+  --outdir DIR      Output directory.         Default: <project>/outputs
+  --no-plot         Do not write the PNG plot.
+  -h, --help        Show this help.
 ```
 
-## Prerequisites
+Examples:
 
-Install the following before running:
+```sh
+# Reproducible run with a quieter sensor over a different region (EMAG2 uses 0-360 or -180..180 longitudes)
+julia --project=. src/main.jl --start=-100,35 --end=-95,40 --noise 0.5 --seed 42
 
-1. Julia 1.8 or newer (recommended: latest stable).
-2. Git (if you are cloning the project).
-3. Internet access the first time (for package download).
-
-Notes:
-
-- ArchGDAL and GDAL binaries are handled through Julia packages in normal setups.
-- Windows PowerShell commands are shown below; they also work similarly in macOS/Linux shells.
-
-## Download The Project
-
-Option A: Clone with Git
-
-```powershell
-git clone <your-repo-url> "MagNav Project"
-cd "MagNav Project"
+# Long, finely sampled flight, no plot
+julia --project=. src/main.jl --steps 2000 --dt 0.1 --no-plot
 ```
 
-Option B: Download ZIP from your repository host
+Exit codes: `0` success, `1` simulation error (e.g. track outside the map or over nodata), `2` bad arguments.
 
-1. Download ZIP.
-2. Extract it.
-3. Open a terminal in the extracted folder.
+### Outputs
 
-## Download EMAG2 Data (Single-Band Raster)
+Written to `outputs/` (git-ignored) or `--outdir`:
 
-Recommended source: NOAA EMAG2 magnetic anomaly grid.
+| File | Contents |
+|---|---|
+| `last_run_summary.txt` | timestamp, raster, sample count, track ends, true min/max, measured mean/std, measurement error mean/RMS |
+| `flight.csv` | `time_s, lon, lat, true_nT, meas_nT, true_{x,y,z}, meas_{x,y,z}` (synthetic runs omit the vector and time columns) |
+| `flight.png` | true vs measured anomaly and error plot |
 
-1. Open NOAA EMAG2 data page:
-    https://www.ncei.noaa.gov/products/magnetic-anomaly-grid-emag2
-2. Download a GeoTIFF tile or global file.
-3. Place the file in the project root.
+## Using it as a Julia library
 
-For the current project defaults, use this file name in the project root:
+```julia
+using MagNavSim
 
-- EMAG2_V3_UpCont_DataTiff.tif
+# Load the map once, run many flights
+amap = load_map("EMAG2_V3_UpCont_DataTiff.tif")
 
-If you use a different name or location, you can still run by entering the full path when prompted.
+sim = simulate_flight(amap, (-122.5, 37.6), (-121.5, 38.6);
+                      nsteps = 500, dt = 1.0,
+                      noise_std = 1.0,          # nT per axis
+                      tau = 0.1,                # sensor low-pass time constant (s)
+                      bias = (2.0, 0.0, 0.0),   # nT
+                      seed = 1)
 
-## First-Time Setup
+sim[:true]      # true anomaly along the track (nT)
+sim[:meas]      # scalar sensor measurement (nT)
+sim[:meas_vec]  # 3-axis sensor measurement (Vector of SVector{3})
 
-From the project root:
-
-```powershell
-julia --project=. -e "using Pkg; Pkg.instantiate()"
+plot_results(sim; path = "flight.png")
+write_csv("flight.csv", sim)
 ```
 
-This installs all dependencies from Project.toml and Manifest.toml.
+No raster at hand? Build a map from any array:
 
-## Run Commands
-
-### 1. Main Runner (Recommended)
-
-```powershell
-julia --project=. src/main.jl
+```julia
+data = [60sin(3x) * cos(2y) for x in 0:0.05:2, y in 2:-0.05:0]   # data[ix, iy], north at iy = 1
+amap = MagneticMap(data, -0.025, 2.025, 0.05, 0.05)              # xmin, ymax, dx, dy
+sim  = simulate_flight(amap, (0.2, 1.8), (1.8, 0.2); noise_std = 2.0, seed = 7)
 ```
 
-Behavior:
+Two ready-to-run scripts live in [`examples/`](examples):
 
-- Prompts for a raster path.
-- Press Enter to use the default EMAG2 file in project root.
-- Runs the simulation.
-- Prints final summary in terminal.
-- Writes summary to outputs/last_run_summary.txt.
+| Script | Needs raster | What it shows |
+|---|---|---|
+| [`simple_run.jl`](examples/simple_run.jl) | yes (falls back to synthetic) | default flight, saves a plot |
+| [`noise_sweep.jl`](examples/noise_sweep.jl) | no | measurement error vs. sensor noise level |
 
-### 2. Quick Example Runner
-
-```powershell
-julia --project=. examples/simple_run.jl
+```sh
+julia --project=. examples/noise_sweep.jl
 ```
 
-Behavior:
+The full function and keyword reference is in **[docs/api.md](docs/api.md)**.
 
-- Uses default EMAG2 raster path from the examples script.
-- Runs simulation and prints returned data keys.
+## Repository layout
 
-## Output Explanation
-
-The simulation returns a dictionary with these keys:
-
-1. :lons
-    Longitude of each simulated sample.
-2. :lats
-    Latitude of each simulated sample.
-3. :true
-    True scalar anomaly sampled from EMAG2 map (nT).
-4. :meas
-    Scalar measurement from magnetometer model after noise/dynamics.
-5. :true_vec
-    True 3-axis magnetic vector (derived from scalar anomaly and field direction).
-6. :meas_vec
-    3-axis measured vector from sensor model.
-
-## Summary File Explanation
-
-Each main run writes:
-
-- outputs/last_run_summary.txt
-
-It contains:
-
-1. Run timestamp (UTC).
-2. Raster file used (absolute path).
-3. Number of samples.
-4. Start and end coordinates.
-5. True anomaly min and max.
-6. Measured anomaly mean and standard deviation.
-7. Whether vector channels were generated.
-
-## Typical End-to-End Workflow
-
-```powershell
-Set-Location "C:\Users\user\Desktop\MagNav Project"
-julia --project=. -e "using Pkg; Pkg.instantiate()"
-julia --project=. src/main.jl
+```text
+.
+├── Project.toml              Julia package definition and dependencies
+├── src/
+│   ├── MagNavSim.jl          module entry point and exports
+│   ├── magnetic_map.jl       MagneticMap, load_map, sample_map
+│   ├── quantum_sensor.jl     QuantumMagnetometer model
+│   ├── simulation.jl         simulate_flight, synthetic flight, run_example
+│   ├── output.jl             plots, summary, CSV export
+│   ├── cli.jl                command-line parsing and runner
+│   ├── emag_downloader.jl    download/reproject helpers
+│   └── main.jl               CLI entry point
+├── examples/                 runnable scripts
+├── test/runtests.jl          test suite
+├── docs/                     model description, API reference, images
+└── .github/workflows/ci.yml  continuous integration
 ```
 
-Then inspect:
+## Testing
 
-- Terminal summary output.
-- outputs/last_run_summary.txt.
+```sh
+julia --project=. -e "using Pkg; Pkg.test()"
+```
+
+The suite covers map indexing and longitude wrapping, a GeoTIFF round-trip including
+nodata, the sensor equations (scale, bias, low-pass step response, seeded noise), flight
+simulation and validation, output files, and the CLI.
 
 ## Troubleshooting
 
-1. main.jl exits quickly with no visible plot
-    This is normal in non-interactive terminal runs. Use the summary file for verification.
+| Symptom | Fix |
+|---|---|
+| First run is very slow | Julia is precompiling Plots/GDAL. This happens once. |
+| `Raster not found; using the synthetic field` | Download EMAG2 (see above) or pass `--raster`. |
+| `DomainError ... outside map extent` | Start/end lie outside a regional raster. Global EMAG2 accepts any longitude. |
+| `flight track crosses nodata` | The track passes over missing data. Choose a different track. |
+| Package errors after pulling updates | `julia --project=. -e "using Pkg; Pkg.resolve(); Pkg.instantiate()"` |
+| Plot fails on a headless server | Set `GKSwstype=100` (the CLI does this automatically). |
 
-2. Raster not found
-    Ensure EMAG2_V3_UpCont_DataTiff.tif exists in project root, or provide a full raster path when prompted.
+## Limitations
 
-3. Package installation issues
-    Re-run:
-    julia --project=. -e "using Pkg; Pkg.instantiate(); Pkg.resolve()"
+This is a measurement simulator, not yet a full navigation study. Tracks are straight
+lines in lon/lat at fixed altitude, the field direction is constant, noise is white and
+Gaussian, and there is no platform interference or attitude model. See
+[docs/model.md](docs/model.md#8-known-limitations).
 
-4. Slow first run
-    Julia precompilation can take time once; later runs are faster.
+## Roadmap
 
-## Key Entry Points
+- Navigation filter (EKF/particle filter) that estimates position from the measurement stream, using [MagNav.jl](https://github.com/MIT-AI-Accelerator/MagNav.jl).
+- Location-dependent main field (IGRF) and realistic flight dynamics.
+- Colored (1/f) sensor noise, drift, and attitude/heading errors.
+- Physically derived quantum-sensor noise models (e.g. optically pumped and NV-diamond magnetometers) to relate sensor design parameters to position accuracy.
 
-- src/main.jl: user-facing runner with prompt, summary printing, and summary file writing.
-- src/MagNavSim.jl: simulation engine and map sampling.
-- src/quantum_sensor.jl: magnetometer model.
-- examples/simple_run.jl: minimal scripted run.
+## Data and credits
+
+Anomaly data: [EMAG2 v3](https://www.ncei.noaa.gov/products/magnetic-anomaly-grid-emag2),
+NOAA National Centers for Environmental Information. Please cite it when publishing results.
+Project of the AUB Quantum Sensing Team.

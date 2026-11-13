@@ -8,7 +8,7 @@ Manifest.toml
 # Julia compiled output
 /.julia/
 
-# EMAG2 raster — large binary; download separately per README
+# EMAG2 raster - large binary; download separately per README
 *.tif
 *.tiff
 *.nc
